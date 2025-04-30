@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
+import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "react-toastify";
 import {
   createProduct,
   getProductById,
   updateProduct,
 } from "../services/productService";
-import { useNavigate, useParams } from "react-router-dom";
-import { toast } from "react-toastify";
 
 const ProductForm = () => {
   const {
@@ -15,31 +15,24 @@ const ProductForm = () => {
     control,
     setValue,
     formState: { errors },
+    watch,
+    setError,
   } = useForm({
     defaultValues: {
       name: "",
       price: "",
+      image: null,
       attributes: [{ key: "", value: "" }],
     },
   });
+
   const { fields, append, remove } = useFieldArray({
     control,
     name: "attributes",
   });
+
   const navigate = useNavigate();
   const { id } = useParams();
-  const [image, setImage] = useState(null);
-
-  const handleRemoveImage = () => {
-    setImage(null);
-    document.getElementById("file-input").value = "";
-  };
-
-  useEffect(() => {
-    if (id) {
-      loadProduct();
-    }
-  }, [id]);
 
   const loadProduct = async () => {
     const product = await getProductById(id);
@@ -51,42 +44,28 @@ const ProductForm = () => {
     );
   };
 
-  const validateFormData = (data, image) => {
-    const errors = [];
-
-    // Validate 'name'
-    if (!data.name || data.name.trim() === "") {
-      errors.push("Product name is required.");
+  useEffect(() => {
+    if (id) {
+      loadProduct();
     }
-
-    // Validate 'price'
-    if (!data.price || isNaN(data.price) || data.price <= 0) {
-      errors.push("Product price must be a valid positive number.");
-    }
-
-    // Validate 'attributes'
-    if (
-      !data.attributes ||
-      !Array.isArray(data.attributes) ||
-      data.attributes.length === 0
-    ) {
-      errors.push(
-        "Product attributes must be a valid array with at least one item."
-      );
-    }
-
-    // Validate 'image'
-    if (image && !(image instanceof File)) {
-      errors.push("The uploaded image must be a valid file.");
-    }
-
-    return errors;
-  };
+  }, [id]);
 
   const onSubmit = async (data) => {
-    const validationErrors = validateFormData(data, image);
+    const file = data.image?.[0];
 
-    if (validationErrors.length > 0) {
+    if (!file) {
+      setError("image", {
+        type: "manual",
+        message: "Product image is required",
+      });
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setError("image", {
+        type: "manual",
+        message: "Only image files are allowed",
+      });
       return;
     }
 
@@ -94,20 +73,19 @@ const ProductForm = () => {
     formData.append("name", data.name);
     formData.append("price", data.price);
     formData.append("attributes", JSON.stringify(data.attributes));
-    if (image) formData.append("image", image);
+    formData.append("image", file);
 
+    let res;
     if (id) {
-      let data = await updateProduct(id, formData);
-      if (data.message) {
-        toast.success(data.message);
-      }
+      res = await updateProduct(id, formData);
     } else {
-      let data = await createProduct(formData);
-      if (data.message) {
-        toast.success(data.message);
-      }
+      res = await createProduct(formData);
     }
-    navigate("/");
+
+    if (res?.message) {
+      toast.success(res.message);
+      navigate("/");
+    }
   };
 
   return (
@@ -116,7 +94,7 @@ const ProductForm = () => {
         {id ? "Edit Product" : "Create Product"}
       </h1>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Product Name */}
+        {/* Name */}
         <div>
           <label className="block mb-2 text-sm font-medium text-gray-700">
             Product Name
@@ -124,18 +102,15 @@ const ProductForm = () => {
           <input
             {...register("name", {
               required: "Product name is required",
-              maxLength: {
-                value: 100,
-                message: "Max length is 100 characters",
-              },
+              maxLength: { value: 100, message: "Max 100 characters" },
             })}
-            placeholder="Enter product name"
-            className={`w-full border rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none ${
+            className={`w-full border rounded-lg p-3 outline-none ${
               errors.name ? "border-red-500" : ""
             }`}
+            placeholder="Enter product name"
           />
           {errors.name && (
-            <span className="text-red-500 text-sm">{errors.name.message}</span>
+            <p className="text-red-500 text-sm">{errors.name.message}</p>
           )}
         </div>
 
@@ -154,38 +129,35 @@ const ProductForm = () => {
             })}
             type="number"
             step="0.01"
-            placeholder="Enter price"
-            className={`w-full border rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+            className={`w-full border rounded-lg p-3 outline-none ${
               errors.price ? "border-red-500" : ""
             }`}
+            placeholder="Enter price"
           />
           {errors.price && (
-            <span className="text-red-500 text-sm">{errors.price.message}</span>
+            <p className="text-red-500 text-sm">{errors.price.message}</p>
           )}
         </div>
 
-        {/* Image Upload */}
+        {/* Image */}
         <div>
           <label className="block mb-2 text-sm font-medium text-gray-700">
             Product Image
           </label>
           <input
-            id="file-input"
             type="file"
-            onChange={(e) => setImage(e?.target?.files[0])}
+            accept="image/*"
+            {...register("image", {
+              validate: {
+                isImage: (files) =>
+                  files?.[0]?.type.startsWith("image/") ||
+                  "Only image files are allowed",
+              },
+            })}
             className="w-full border rounded-lg p-3"
           />
-          {image && (
-            <div className="mt-2 flex items-center">
-              <span className="text-sm text-gray-800">{image.name}</span>
-              <button
-                type="button"
-                onClick={handleRemoveImage}
-                className="ml-2 text-sm text-red-600 hover:underline"
-              >
-                Remove
-              </button>
-            </div>
+          {errors.image && (
+            <p className="text-red-500 text-sm">{errors.image.message}</p>
           )}
         </div>
 
@@ -197,33 +169,23 @@ const ProductForm = () => {
               <input
                 {...register(`attributes.${index}.key`, {
                   required: "Key is required",
+                  maxLength: { value: 100, message: "Max 100 characters" },
                 })}
                 placeholder="Key"
-                className={`w-1/2 border rounded-lg p-2 focus:ring-2 focus:ring-blue-400 outline-none ${
+                className={`w-1/2 border rounded-lg p-2 outline-none ${
                   errors.attributes?.[index]?.key ? "border-red-500" : ""
                 }`}
               />
-              {errors.attributes?.[index]?.key && (
-                <span className="text-red-500 text-sm">
-                  {errors.attributes[index].key.message}
-                </span>
-              )}
-
               <input
                 {...register(`attributes.${index}.value`, {
                   required: "Value is required",
+                  maxLength: { value: 100, message: "Max 100 characters" },
                 })}
                 placeholder="Value"
-                className={`w-1/2 border rounded-lg p-2 focus:ring-2 focus:ring-blue-400 outline-none ${
+                className={`w-1/2 border rounded-lg p-2 outline-none ${
                   errors.attributes?.[index]?.value ? "border-red-500" : ""
                 }`}
               />
-              {errors.attributes?.[index]?.value && (
-                <span className="text-red-500 text-sm">
-                  {errors.attributes[index].value.message}
-                </span>
-              )}
-
               <button
                 type="button"
                 onClick={() => remove(index)}
@@ -233,21 +195,20 @@ const ProductForm = () => {
               </button>
             </div>
           ))}
-
           <button
             type="button"
             onClick={() => append({ key: "", value: "" })}
-            className="mt-2 inline-block bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg transition"
+            className="mt-2 inline-block bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg"
           >
             + Add Attribute
           </button>
         </div>
 
-        {/* Submit Button */}
+        {/* Submit */}
         <div>
           <button
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg"
           >
             {id ? "Update Product" : "Create Product"}
           </button>
